@@ -1,0 +1,10 @@
+{
+  "host": "0.0.0.0",
+  "port": 8000,
+  "projects_dir": "projects",
+  "static_dir": "static",
+  "cache_dir": ".cache",
+  "blender_bin": "/home/eleissa/Display/blender-5.2 (2).3-linux-x64/blender",
+  "exclude_mesh_names": ["Plane", "Ground", "Chão", "Piso"],
+  "conversion_timeout_seconds": 300
+}

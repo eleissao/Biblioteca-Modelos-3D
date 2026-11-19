@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#0c100e">
+    <title>Biblioteca de Modelos 3D</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/static/css/app.css">
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/static/vendor/three/three.module.js",
+          "three/addons/": "/static/vendor/three/addons/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#/" aria-label="Ir para a lista de projetos">
+        <span class="brand-mark" aria-hidden="true">◈</span>
+        <span class="brand-text">
+          <strong>Biblioteca de Modelos 3D</strong>
+          <small>Acervo local feito no Blender</small>
+        </span>
+      </a>
+      <span class="topbar-hint">Ctrl+R atualiza o acervo</span>
+    </header>
+
+    <main id="app" class="app">
+      <div class="loading-view">
+        <span class="spinner large" aria-hidden="true"></span>
+        <p>Carregando acervo…</p>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <p>
+        Coloque os arquivos em <code>projects/&lt;projeto&gt;/models/&lt;modelo&gt;/</code>
+        ou use os botões da página para criar projetos e enviar modelos.
+      </p>
+    </footer>
+
+    <div id="dialog-root"></div>
+    <div id="manager-root"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <noscript>
+      <p class="noscript">Esta biblioteca precisa de JavaScript para renderizar os modelos 3D.</p>
+    </noscript>
+
+    <script type="module" src="/static/js/app.js"></script>
+  </body>
+</html>

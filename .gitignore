@@ -1,0 +1,8 @@
+.cache/
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Modelos e texturas ficam só na máquina local.
+projects/*
+!projects/.gitkeep
