@@ -24,15 +24,21 @@ let closeManager = null;
 
 const kindLabels = {
   blend: "BLEND",
+  fbx: "FBX",
   glb: "GLB",
   gltf: "GLTF",
 };
 
 const kindNames = {
   blend: "Blender",
+  fbx: "Autodesk FBX",
   glb: "glTF binário",
   gltf: "glTF",
 };
+
+function convertedKind(kind) {
+  return kind === "blend" || kind === "fbx";
+}
 
 
 function el(tag, className, text) {
@@ -355,14 +361,14 @@ function openUploadModel(project) {
   openManager({
     title: "Adicionar modelo",
     description:
-      "Envie um modelo por vez. Para .gltf, selecione também o .bin e as texturas usadas por ele.",
+      "Envie um modelo por vez. Para .gltf, selecione também o .bin e as texturas usadas por ele. Para .fbx, inclua as texturas externas, se houver.",
     fields: [
       {
         name: "files",
         label: "Arquivos do modelo",
         type: "file",
         accept:
-          ".blend,.glb,.gltf,.bin,.png,.jpg,.jpeg,.webp,.avif,.gif,.ktx2,.basis",
+          ".blend,.fbx,.glb,.gltf,.bin,.png,.jpg,.jpeg,.webp,.avif,.gif,.ktx2,.basis,.tga,.dds,.bmp,.tif,.tiff,.exr,.hdr",
         multiple: true,
         required: true,
         help: "O arquivo principal define o nome da pasta do modelo.",
@@ -374,11 +380,11 @@ function openUploadModel(project) {
         throw new Error("Selecione ao menos um arquivo.");
       }
       const primaries = files.filter((file) =>
-        /\.(blend|glb|gltf)$/i.test(file.name),
+        /\.(blend|fbx|glb|gltf)$/i.test(file.name),
       );
       if (primaries.length !== 1) {
         throw new Error(
-          "Selecione exatamente um arquivo .blend, .glb ou .gltf, junto com os arquivos auxiliares.",
+          "Selecione exatamente um arquivo .blend, .fbx, .glb ou .gltf, junto com os arquivos auxiliares.",
         );
       }
       await uploadModel(project.id, files);
@@ -568,7 +574,9 @@ class PreviewPool {
 
     this.setStatus(
       entry,
-      entry.model.kind === "blend" ? "Convertendo .blend…" : "Carregando prévia…",
+      convertedKind(entry.model.kind)
+        ? `Convertendo .${entry.model.kind}…`
+        : "Carregando prévia…",
     );
 
     let viewer;
@@ -748,7 +756,7 @@ function renderProject(project) {
       header,
       emptyState(
         "Pasta de modelos vazia",
-        "Use o botão Adicionar modelo ou coloque um arquivo .blend, .glb ou .gltf dentro de models/.",
+        "Use o botão Adicionar modelo ou coloque um arquivo .blend, .fbx, .glb ou .gltf dentro de models/.",
         `projects/${project.id}/models/`,
       ),
     );
@@ -925,14 +933,14 @@ function openDialog(project, model) {
   const loadText = el(
     "p",
     "dialog-load-text",
-    model.kind === "blend"
-      ? "Convertendo .blend para GLB…"
+    convertedKind(model.kind)
+      ? `Convertendo .${model.kind} para GLB…`
       : "Carregando modelo…",
   );
   const loadNote = el(
     "p",
     "dialog-load-note",
-    model.kind === "blend"
+    convertedKind(model.kind)
       ? "A primeira abertura pode levar alguns segundos."
       : "Preparando a cena 3D.",
   );

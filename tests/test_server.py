@@ -24,6 +24,9 @@ class ServerTests(unittest.TestCase):
         cls.model = cls.projects / "P/models/model/file.glb"
         cls.model.parent.mkdir(parents=True)
         cls.model.write_bytes(b"glTF-test-bytes")
+        cls.fbx = cls.projects / "P/models/fbx/box.fbx"
+        cls.fbx.parent.mkdir(parents=True)
+        cls.fbx.write_bytes(b"fbx-test-bytes")
         (root / "secret.txt").write_text("secret")
 
         config = load_config(
@@ -65,10 +68,14 @@ class ServerTests(unittest.TestCase):
         self.assertIn("application/json", content_type)
         data = json.loads(body)
         self.assertEqual(data["projects"][0]["name"], "P")
-        self.assertEqual(data["projects"][0]["models"][0]["name"], "file")
+        models = {
+            model["name"]: model for model in data["projects"][0]["models"]
+        }
+        self.assertEqual(models["file"]["asset_url"], "/assets/P/model/file.glb")
+        self.assertEqual(models["box"]["kind"], "fbx")
         self.assertEqual(
-            data["projects"][0]["models"][0]["asset_url"],
-            "/assets/P/model/file.glb",
+            models["box"]["asset_url"],
+            "/api/glb?project=P&path=fbx%2Fbox.fbx",
         )
 
     def test_static_and_health(self) -> None:
@@ -91,13 +98,13 @@ class ServerTests(unittest.TestCase):
         status, _, _ = self.get("/static/%2E%2E/secret.txt")
         self.assertEqual(status, 400)
 
-    def test_api_glb_rejects_non_blend(self) -> None:
+    def test_api_glb_rejects_unconvertible_formats(self) -> None:
         query = urllib.parse.urlencode(
             {"project": "P", "path": "model/file.glb"}
         )
         status, body, _ = self.get(f"/api/glb?{query}")
         self.assertEqual(status, 400)
-        self.assertIn("error", json.loads(body))
+        self.assertIn(".blend ou .fbx", json.loads(body)["error"])
 
 
 class ConfigTests(unittest.TestCase):
@@ -265,6 +272,37 @@ class CrudServerTests(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertFalse(
             (self.projects / "Plantas/models/costela").exists()
+        )
+
+    def test_fbx_upload_routes_preview_through_api_glb(self) -> None:
+        status, body = self.post_json("/api/projects", {"name": "Modelos FBX"})
+        self.assertEqual(status, 201, body)
+
+        status, body = self.post_files(
+            "/api/models/upload?project=Modelos%20FBX",
+            [
+                ("buriti.fbx", b"fbx-bytes"),
+                ("buriti.tga", b"tga-bytes"),
+            ],
+        )
+        self.assertEqual(status, 201, body)
+        self.assertEqual(json.loads(body)["path"], "buriti/buriti.fbx")
+        self.assertTrue(
+            (
+                self.projects / "Modelos FBX/models/buriti/buriti.tga"
+            ).is_file()
+        )
+
+        status, body = self.request("/api/projects")
+        self.assertEqual(status, 200)
+        projects = {
+            project["name"]: project for project in json.loads(body)["projects"]
+        }
+        model = projects["Modelos FBX"]["models"][0]
+        self.assertEqual(model["kind"], "fbx")
+        self.assertEqual(
+            model["asset_url"],
+            "/api/glb?project=Modelos%20FBX&path=buriti%2Fburiti.fbx",
         )
 
     def test_crud_rejects_traversal(self) -> None:

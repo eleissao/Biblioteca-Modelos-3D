@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 SUPPORTED_EXTENSIONS = {
     ".blend": "blend",
+    ".fbx": "fbx",
     ".glb": "glb",
     ".gltf": "gltf",
 }
@@ -40,7 +41,7 @@ class Model:
 
     @property
     def asset_url(self) -> str:
-        if self.kind == "blend":
+        if self.kind in {"blend", "fbx"}:
             return (
                 "/api/glb?project="
                 + quote(self.project_id, safe="")

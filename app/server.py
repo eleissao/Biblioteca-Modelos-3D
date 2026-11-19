@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from .converter import BlendConverter, ConversionError, resolve_blender
+from .converter import ConversionError, ModelConverter, resolve_blender
 from .library import (
     InvalidPath,
     scan_projects,
@@ -71,7 +71,7 @@ class AppConfig:
 @dataclass
 class AppContext:
     config: AppConfig
-    converter: BlendConverter
+    converter: ModelConverter
 
 
 def load_config(config_path: Path, overrides: dict[str, Any]) -> AppConfig:
@@ -414,8 +414,8 @@ class AppRequestHandler(BaseHTTPRequestHandler):
             self.context.config.projects_dir, project_id
         )
         source = resolve_model_source(project_dir, relative_path)
-        if source.suffix.lower() != ".blend":
-            raise InvalidPath("/api/glb só aceita arquivos .blend")
+        if source.suffix.lower() not in {".blend", ".fbx"}:
+            raise InvalidPath("/api/glb só aceita arquivos .blend ou .fbx")
 
         cached = self.context.converter.ensure_glb(
             project_id, relative_path, source
@@ -485,7 +485,7 @@ class AppRequestHandler(BaseHTTPRequestHandler):
 
 
 def build_server(config: AppConfig) -> AppHTTPServer:
-    converter = BlendConverter(
+    converter = ModelConverter(
         blender_bin=config.blender_bin,
         cache_dir=config.cache_dir,
         exclude_mesh_names=config.exclude_mesh_names,
@@ -563,7 +563,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("Blender: %s", config.blender_bin)
     else:
         logger.warning(
-            "Blender não encontrado; .blend não poderão ser convertidos. "
+            "Blender não encontrado; .blend e .fbx não poderão ser convertidos. "
             "Defina BLENDER_BIN ou blender_bin em config.json."
         )
     logger.info("Abrindo em http://%s:%s", address, port)

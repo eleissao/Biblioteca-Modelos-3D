@@ -39,8 +39,13 @@ def resolve_blender(configured: str | None) -> Path | None:
     return None
 
 
-class BlendConverter:
-    """Converts .blend files to Draco-compressed GLB, cached by mtime/size."""
+class ModelConverter:
+    """Converts .blend and .fbx files to Draco-compressed GLB.
+
+    The cache key includes the source mtime/size plus the exporter and Blender
+    configuration. FBX uses a separate signature so the warmed .blend cache
+    stays valid when the FBX importer changes.
+    """
 
     def __init__(
         self,
@@ -49,36 +54,61 @@ class BlendConverter:
         exclude_mesh_names: list[str],
         timeout_seconds: int = 300,
         script_path: Path | None = None,
+        fbx_import_script_path: Path | None = None,
     ) -> None:
         self.blender_bin = blender_bin
         self.cache_dir = cache_dir
         self.exclude_mesh_names = list(exclude_mesh_names)
         self.timeout_seconds = timeout_seconds
-        self.script_path = script_path or (
-            Path(__file__).resolve().parent.parent / "blender_export.py"
+        root = Path(__file__).resolve().parent.parent
+        self.script_path = script_path or root / "blender_export.py"
+        self.fbx_import_script_path = (
+            fbx_import_script_path or root / "blender_import_fbx.py"
         )
         self.gl_cache_dir = self.cache_dir / "glb"
         self.tmp_dir = self.cache_dir / "tmp"
         self.gl_cache_dir.mkdir(parents=True, exist_ok=True)
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
         self.cache_signature = self._config_signature()
+        self.fbx_cache_signature = self._fbx_signature()
         self._conversion_slot = threading.Semaphore(1)
         self._locks: dict[str, threading.Lock] = {}
         self._locks_guard = threading.Lock()
 
-    def _config_signature(self) -> str:
+    @staticmethod
+    def _file_signature(path: Path) -> list[int]:
         try:
-            stat = self.script_path.stat()
-            script = [stat.st_mtime_ns, stat.st_size]
+            stat = path.stat()
+            return [stat.st_mtime_ns, stat.st_size]
         except OSError:
-            script = [0, 0]
+            return [0, 0]
+
+    def _config_signature(self) -> str:
         payload = json.dumps(
             {
                 "schema": 2,
                 "exclude": sorted(
                     (str(name).casefold() for name in self.exclude_mesh_names)
                 ),
-                "script": script,
+                "script": self._file_signature(self.script_path),
+                "blender": str(self.blender_bin) if self.blender_bin else "",
+            },
+            sort_keys=True,
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:10]
+
+    def _fbx_signature(self) -> str:
+        payload = json.dumps(
+            {
+                "schema": 1,
+                "format": "fbx",
+                "exclude": sorted(
+                    (str(name).casefold() for name in self.exclude_mesh_names)
+                ),
+                "export_script": self._file_signature(self.script_path),
+                "import_script": self._file_signature(
+                    self.fbx_import_script_path
+                ),
                 "blender": str(self.blender_bin) if self.blender_bin else "",
             },
             sort_keys=True,
@@ -93,15 +123,53 @@ class BlendConverter:
                 self._locks[key] = lock
             return lock
 
-    def _key(self, project_id: str, relative_path: str) -> str:
-        raw = (
-            f"{project_id}\x00{relative_path}\x00{self.cache_signature}"
-        ).encode("utf-8")
+    def _key(
+        self, project_id: str, relative_path: str, suffix: str = ".blend"
+    ) -> str:
+        signature = (
+            self.fbx_cache_signature
+            if suffix.casefold() == ".fbx"
+            else self.cache_signature
+        )
+        raw = f"{project_id}\x00{relative_path}\x00{signature}".encode("utf-8")
         return hashlib.sha256(raw).hexdigest()[:20]
 
-    def _cache_path(self, key: str, source: Path) -> Path:
+    def _source_stamp(self, source: Path) -> str:
         stat = source.stat()
-        return self.gl_cache_dir / f"{key}_{stat.st_mtime_ns}_{stat.st_size}.glb"
+        stamp = f"{stat.st_mtime_ns}_{stat.st_size}"
+        if source.suffix.lower() != ".fbx":
+            return stamp
+
+        # FBX often references external textures. Include the sibling files so
+        # replacing a texture invalidates the cached GLB too.
+        siblings: list[str] = []
+        try:
+            entries = list(source.parent.iterdir())
+        except OSError:
+            entries = []
+        for candidate in entries:
+            if (
+                candidate == source
+                or candidate.name.startswith(".")
+                or not candidate.is_file()
+            ):
+                continue
+            try:
+                sibling = candidate.stat()
+            except OSError:
+                continue
+            siblings.append(
+                f"{candidate.name}\x00{sibling.st_mtime_ns}\x00{sibling.st_size}"
+            )
+        if siblings:
+            digest = hashlib.sha256(
+                "\x00".join(sorted(siblings)).encode("utf-8")
+            ).hexdigest()[:10]
+            stamp += f"_{digest}"
+        return stamp
+
+    def _cache_path(self, key: str, source: Path) -> Path:
+        return self.gl_cache_dir / f"{key}_{self._source_stamp(source)}.glb"
 
     @staticmethod
     def _valid_glb(path: Path) -> bool:
@@ -114,6 +182,13 @@ class BlendConverter:
             return False
 
     def ensure_glb(self, project_id: str, relative_path: str, source: Path) -> Path:
+        source = Path(source)
+        suffix = source.suffix.lower()
+        if suffix not in {".blend", ".fbx"}:
+            raise ConversionError(
+                "Formato não suportado para conversão.",
+                f"Use .blend ou .fbx: {source.name}",
+            )
         if self.blender_bin is None:
             raise ConversionError(
                 "Blender não encontrado.",
@@ -124,9 +199,13 @@ class BlendConverter:
                 "Script de exportação ausente.",
                 f"Esperado em: {self.script_path}",
             )
+        if suffix == ".fbx" and not self.fbx_import_script_path.is_file():
+            raise ConversionError(
+                "Script de importação FBX ausente.",
+                f"Esperado em: {self.fbx_import_script_path}",
+            )
 
-        source = Path(source)
-        key = self._key(project_id, relative_path)
+        key = self._key(project_id, relative_path, suffix)
 
         cache_path = self._cache_path(key, source)
         if self._valid_glb(cache_path):
@@ -151,13 +230,22 @@ class BlendConverter:
         os.close(handle)
         temp_path = Path(temp_name)
 
+        suffix = source.suffix.lower()
         command = [
             str(self.blender_bin),
             "--background",
             "--factory-startup",
-            str(source),
             "--python-exit-code",
             "1",
+        ]
+        environment = None
+        if suffix == ".fbx":
+            command += ["--python", str(self.fbx_import_script_path)]
+            environment = dict(os.environ)
+            environment["BIBLIOTECA_FBX_SOURCE"] = str(source)
+        else:
+            command.append(str(source))
+        command += [
             "--python",
             str(self.script_path),
             "--",
@@ -175,6 +263,7 @@ class BlendConverter:
                     text=True,
                     timeout=self.timeout_seconds,
                     check=False,
+                    env=environment,
                 )
             except subprocess.TimeoutExpired as exc:
                 raise ConversionError(

@@ -66,6 +66,19 @@ class ManagerTests(unittest.TestCase):
             (project / "models/samambaia/textura.png").is_file()
         )
 
+    def test_import_fbx_accepts_external_textures(self) -> None:
+        project = create_project(self.projects, "Árvores")
+        relative = import_model(
+            project,
+            [
+                UploadFile("buriti.fbx", b"fbx"),
+                UploadFile("buriti.tga", b"tga"),
+            ],
+        )
+
+        self.assertEqual(relative, "buriti/buriti.fbx")
+        self.assertTrue((project / "models/buriti/buriti.tga").is_file())
+
     def test_import_model_creates_missing_models_folder(self) -> None:
         project = self.projects / "Projeto manual"
         project.mkdir(parents=True)

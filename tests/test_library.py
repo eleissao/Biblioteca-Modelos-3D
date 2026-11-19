@@ -35,6 +35,7 @@ class LibraryTests(unittest.TestCase):
         self.touch("Alpha/models/one/one.blend")
         self.touch("Alpha/models/two.glb")
         self.touch("Alpha/models/nested/deep/three.gltf")
+        self.touch("Alpha/models/four/four.fbx")
         self.touch("Alpha/models/readme.txt")
         self.touch("Alpha/models/.hidden/hidden.glb")
         self.touch("Beta/models/.keep")
@@ -46,26 +47,34 @@ class LibraryTests(unittest.TestCase):
 
         alpha = projects[0]
         self.assertEqual([m.relative_path for m in alpha.models], [
+            "four/four.fbx",
             "nested/deep/three.gltf",
             "one/one.blend",
             "two.glb",
         ])
-        self.assertEqual([m.kind for m in alpha.models], ["gltf", "blend", "glb"])
+        self.assertEqual(
+            [m.kind for m in alpha.models], ["fbx", "gltf", "blend", "glb"]
+        )
         self.assertEqual(projects[1].model_count, 0)
 
-        blend = alpha.models[1]
+        fbx = alpha.models[0]
+        parsed = parse_qs(urlsplit(fbx.asset_url).query)
+        self.assertEqual(parsed["project"], ["Alpha"])
+        self.assertEqual(parsed["path"], ["four/four.fbx"])
+
+        blend = alpha.models[2]
         parsed = parse_qs(urlsplit(blend.asset_url).query)
         self.assertEqual(parsed["project"], ["Alpha"])
         self.assertEqual(parsed["path"], ["one/one.blend"])
 
-        glb = alpha.models[2]
+        glb = alpha.models[3]
         self.assertEqual(glb.asset_url, "/assets/Alpha/two.glb")
 
     def test_flat_and_nested_files_are_accepted(self) -> None:
         self.touch("P/models/flat.GLB")
-        self.touch("P/models/sub/nested.gltf")
+        self.touch("P/models/sub/nested.FBX")
         models = scan_projects(self.projects)[0].models
-        self.assertEqual([m.kind for m in models], ["glb", "gltf"])
+        self.assertEqual([m.kind for m in models], ["glb", "fbx"])
 
     def test_natural_sort(self) -> None:
         self.assertLess(natural_key("model 2"), natural_key("model 10"))
@@ -108,8 +117,13 @@ class LibraryTests(unittest.TestCase):
         source = project / "models/m/m.blend"
         source.parent.mkdir(parents=True)
         source.write_bytes(b"x")
+        fbx = project / "models/m/m.fbx"
+        fbx.write_bytes(b"x")
         self.assertEqual(
             resolve_model_source(project, "m/m.blend"), source.resolve()
+        )
+        self.assertEqual(
+            resolve_model_source(project, "m/m.fbx"), fbx.resolve()
         )
         with self.assertRaises(FileNotFoundError):
             resolve_model_source(project, "m/missing.blend")

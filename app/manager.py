@@ -17,11 +17,18 @@ ALLOWED_SIDECAR_EXTENSIONS = {
     ".avif",
     ".basis",
     ".bin",
+    ".bmp",
+    ".dds",
+    ".exr",
     ".gif",
+    ".hdr",
     ".jpeg",
     ".jpg",
     ".ktx2",
     ".png",
+    ".tga",
+    ".tif",
+    ".tiff",
     ".webp",
 }
 
@@ -134,7 +141,7 @@ def import_model(project_dir: Path, files: list[UploadFile]) -> str:
     ]
     if len(primaries) != 1:
         raise InvalidPath(
-            "envie exatamente um modelo .blend, .glb ou .gltf por vez"
+            "envie exatamente um modelo .blend, .fbx, .glb ou .gltf por vez"
         )
 
     primary = primaries[0]

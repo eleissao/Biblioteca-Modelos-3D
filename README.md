@@ -14,8 +14,8 @@ three.js em `static/vendor/three/`.
 
 - Python 3.10 ou mais recente.
 - Um navegador com WebGL 2 (Chrome, Firefox, Edge etc.).
-- Blender 4.2 ou mais recente **somente para converter arquivos `.blend`**.
-  Arquivos `.glb`/`.gltf` são servidos diretamente.
+- Blender 4.2 ou mais recente **somente para converter arquivos `.blend` e
+  `.fbx`**. Arquivos `.glb`/`.gltf` são servidos diretamente.
 
 ## Rodar
 
@@ -55,9 +55,9 @@ projects/
         copo_barro.blend
 ```
 
-- Cada arquivo `.blend`, `.glb` ou `.gltf` encontrado em `models/` vira um card.
-  A estrutura em subpastas é a recomendada, mas arquivos soltos também são
-  aceitos.
+- Cada arquivo `.blend`, `.fbx`, `.glb` ou `.gltf` encontrado em `models/` vira
+  um card. A estrutura em subpastas é a recomendada, mas arquivos soltos também
+  são aceitos.
 - O nome exibido é o nome do arquivo, sem a extensão. Se uma pasta tiver mais de
   um arquivo suportado, cada arquivo aparece separadamente.
 - Extensões são reconhecidas sem diferenciar maiúsculas/minúsculas.
@@ -67,9 +67,10 @@ projects/
 ## Gerenciar pela interface
 
 - **Novo projeto** cria `projects/<nome>/models/`.
-- **Adicionar modelo** recebe um arquivo principal (`.blend`, `.glb` ou `.gltf`)
-  e, opcionalmente, arquivos auxiliares do `.gltf` (`.bin`, texturas). O envio
-  cria `models/<nome-do-arquivo>/` e grava tudo dentro dela.
+- **Adicionar modelo** recebe um arquivo principal (`.blend`, `.fbx`, `.glb` ou
+  `.gltf`) e, opcionalmente, arquivos auxiliares do `.gltf` (`.bin`, texturas)
+  ou texturas externas do `.fbx`. O envio cria
+  `models/<nome-do-arquivo>/` e grava tudo dentro dela.
 - **Renomear modelo** renomeia o arquivo. Se ele estiver em uma pasta dedicada
   com o mesmo nome, a pasta também é renomeada.
 - **Excluir modelo** apaga o arquivo. Quando a pasta dedicada fica sem modelos,
@@ -83,11 +84,13 @@ autenticação. Como o padrão escuta em `0.0.0.0`, qualquer dispositivo que alc
 a porta pode criar e excluir conteúdo. Use apenas em uma rede confiável ou
 restrinja com `--host 127.0.0.1`.
 
-## Conversão de `.blend`
+## Conversão de `.blend` e `.fbx`
 
-O navegador não renderiza `.blend`. Na primeira abertura de um modelo `.blend`,
-o servidor executa o Blender em modo headless e gera um `.glb` comprimido com
-Draco em `.cache/glb/`. A conversão:
+O navegador não renderiza `.blend` nem `.fbx`. Na primeira abertura de um
+desses modelos, o servidor executa o Blender em modo headless e gera um `.glb`
+comprimido com Draco em `.cache/glb/`. Para `.fbx`, o Blender importa o arquivo
+em uma cena vazia, carrega texturas embutidas e procura texturas externas na
+pasta do modelo. Depois, a conversão:
 
 - remove câmeras e luzes;
 - remove malhas com nomes **exatos** `Plane`, `Ground`, `Chão` ou `Piso`
@@ -98,8 +101,10 @@ Draco em `.cache/glb/`. A conversão:
   como molde das partículas;
 - aplica modificadores e exporta todas as outras malhas com materiais e
   texturas incorporados;
-- usa cache por caminho, data de modificação, tamanho e assinatura do
-  exportador. Se o `.blend` mudar, ele é convertido de novo.
+- usa cache por caminho, data de modificação, tamanho e assinatura dos
+  exportadores. Para `.fbx`, os arquivos vizinhos também entram na assinatura,
+  então trocar uma textura externa força uma nova conversão. Se o modelo mudar,
+  ele é convertido de novo.
 
 A primeira conversão pode levar alguns segundos; as seguintes usam o cache. As
 conversões são serializadas para não abrir vários Blenders ao mesmo tempo. Para
@@ -140,8 +145,8 @@ python3 -m unittest tests.test_library.LibraryTests.test_scan_projects_and_model
 
 Os testes de conversão abrem o Blender de verdade e são pulados se ele não for
 encontrado. Eles usam diretórios temporários e não alteram `projects/`. A suíte
-também cobre o CRUD de projetos e modelos, a proteção contra path traversal e a
-exportação de instâncias de partículas.
+também cobre o CRUD de projetos e modelos, a proteção contra path traversal, a
+conversão de `.fbx` e a exportação de instâncias de partículas.
 
 ## API usada pelo frontend
 
@@ -153,7 +158,7 @@ exportação de instâncias de partículas.
 - `POST /api/projects/delete`: exclui. Corpo: `{"project": "..."}`.
 - `POST /api/models/upload?project=<projeto>`: recebe
   `multipart/form-data` com um campo `files` contendo um modelo principal e,
-  se for `.gltf`, os arquivos auxiliares.
+  se for `.gltf` ou `.fbx`, os arquivos auxiliares e texturas externas.
 - `POST /api/models/rename`: renomeia. Corpo:
   `{"project": "...", "path": "...", "name": "..."}`.
 - `POST /api/models/delete`: exclui. Corpo:
@@ -161,7 +166,7 @@ exportação de instâncias de partículas.
 - `GET /assets/<projeto>/<caminho-no-models>`: serve `.glb`, `.gltf` e recursos
   relativos (`.bin`, texturas) com proteção contra path traversal.
 - `GET /api/glb?project=<projeto>&path=<caminho>`: converte ou serve o GLB em
-  cache de um `.blend`.
+  cache de um `.blend` ou `.fbx`.
 - `GET /api/health` e `GET /health`: diagnóstico do servidor.
 
 As rotas de escrita usam JSON ou multipart e respondem com erro em JSON. Nomes
@@ -198,11 +203,15 @@ As rotas da SPA usam hash:
   o modelo como `.glb`.
 - **`.blend` não abre / erro de versão**: use Blender 4.2+; arquivos salvos em
   versões mais novas podem não abrir em versões antigas.
+- **`.fbx` não abre**: confira o erro detalhado no dialog. Versões muito antigas
+  do formato podem não ser aceitas pelo importador do Blender; reexporte o FBX
+  em uma versão recente ou como `.glb`.
 - **Modelo demora na primeira abertura**: é a conversão para GLB; acompanhe o
   progresso no card/dialog. As próximas aberturas usam `.cache/glb/`.
 - **Porta ocupada**: rode com `--port 9000` ou altere `port` no `config.json`.
-- **Upload recusado**: envie exatamente um `.blend`, `.glb` ou `.gltf` por vez.
-  Para `.gltf`, inclua também o `.bin` e as texturas referenciadas.
+- **Upload recusado**: envie exatamente um `.blend`, `.fbx`, `.glb` ou `.gltf`
+  por vez. Para `.gltf`, inclua também o `.bin` e as texturas referenciadas.
+  Para `.fbx`, inclua as texturas externas que ele usa.
 - **Prévia indisponível**: abra o card para ver o erro detalhado do Blender; se
   o modelo for só um plano de chão filtrado, remova o nome da lista
   `exclude_mesh_names`.

@@ -18,23 +18,29 @@
 ## Architecture
 
 - `app/library.py` scans `projects/<project>/models/` recursively and builds
-  URLs. Supported extensions are `.blend`, `.glb`, `.gltf`; each supported file
-  becomes one card, even inside a shared folder. Flat files are accepted too.
-  Projects with zero models are included.
+  URLs. Supported extensions are `.blend`, `.fbx`, `.glb`, `.gltf`; each
+  supported file becomes one card, even inside a shared folder. Flat files are
+  accepted too. `.blend` and `.fbx` get an `/api/glb` asset URL; `.glb` and
+  `.gltf` are served directly. Projects with zero models are included.
 - `app/server.py` is a stdlib `ThreadingHTTPServer`. `/assets/<project>/<path>`
   serves files relative to that project's `models/` directory; `.gltf` sidecars
   (`.bin`, textures) resolve through the same route. `/api/glb` converts a
-  `.blend` and serves the cached GLB. The write routes use `app/manager.py` for
-  project creation/rename/delete and model upload/rename/delete. Uploads are
-  `multipart/form-data`; the UI sends one primary model plus optional sidecars.
+  `.blend` or `.fbx` and serves the cached GLB. The write routes use
+  `app/manager.py` for project creation/rename/delete and model
+  upload/rename/delete. Uploads are `multipart/form-data`; the UI sends one
+  primary model plus optional sidecars.
 - `app/manager.py` validates names and paths through `library.py`, writes uploads
   to a hidden temp folder and renames it into place. Renaming a model also
   renames its dedicated folder; deleting the last model removes that folder.
   Shared folders stay in place.
-- `app/converter.py` runs Blender headless through `blender_export.py`.
-  Conversions are globally serialized because Blender is memory-heavy. The cache
-  key includes project/path, source mtime and size, excluded mesh names, Blender
-  path, and exporter script mtime/size.
+- `app/converter.py` runs Blender headless through `blender_export.py`. FBX is
+  imported first by `blender_import_fbx.py` into an empty scene; both scripts
+  run in the same Blender process. Conversions are globally serialized because
+  Blender is memory-heavy. The cache key includes project/path, source mtime and
+  size, excluded mesh names, Blender path, and exporter script mtime/size. FBX
+  has its own signature that also covers the importer script, and its cache
+  filename includes a digest of sibling files so external texture changes
+  invalidate it. `.blend` cache keys stay unchanged when the FBX importer does.
 - Frontend is vanilla ES modules in `static/js/`; three.js r187 is vendored in
   `static/vendor/three/`. There is no bundler. Routes are hash-based:
   `#/`, `#/p/<project>`, `#/p/<project>/m/<model>`.
@@ -56,6 +62,10 @@
   unlinked from the scene but kept in `bpy.data` so the exporter can emit its
   instances. `Àrvore janipapo` needs this because its leaves use a `Plane`
   template. Do not turn the exception into name-based special cases.
+- FBX import must start from an empty scene (`read_factory_settings(use_empty=True)`).
+  Otherwise the factory startup cube is exported alongside the model. Keep
+  `blender_export.py` unchanged when possible so warmed `.blend` cache keys stay
+  valid; put FBX-only import logic in `blender_import_fbx.py`.
 - Preview cards use one shared WebGL renderer (`PreviewEngine` in
   `static/js/viewer.js`), not one context per card. Each card owns a 2D canvas
   that receives the last rendered frame. Previews start at 90% visibility and
@@ -68,7 +78,7 @@
   cannot contain separators, `..`, or leading dots. Do not join request paths
   directly.
 - Deleting `.cache/` is safe and forces re-conversion. It currently contains the
-  warmed GLBs; deleting it makes the first `.blend` open slow again.
+  warmed GLBs; deleting it makes the first `.blend` or `.fbx` open slow again.
 - Path helpers intentionally reject absolute paths, `..`, backslashes, and
   symlink escapes. Use `resolve_under`/`resolve_project_dir` rather than joining
   request paths directly.
@@ -78,11 +88,10 @@
 
 ## Tests and repo state
 
-- Integration tests in `tests/test_converter.py` invoke the configured Blender
-  and create fixtures in temporary directories; they skip if Blender is missing.
-  They do not touch `projects/`. `tests/test_manager.py` and
-  `tests/test_server.py` cover CRUD and traversal rejection.
-- This directory is not a Git repository. Do not initialize or commit without
-  being asked.
+- Integration tests in `tests/test_converter.py` invoke the configured Blender,
+  generate `.blend` and `.fbx` fixtures in temporary directories, and skip if
+  Blender is missing. They do not touch `projects/`. `tests/test_manager.py` and
+  `tests/test_server.py` cover CRUD, format routing, and traversal rejection.
+- This directory is a Git repository. Do not commit without being asked.
 - `README.md` is the user-facing setup/conversion guide; keep it in sync with
   changes to config keys, supported formats, or commands.
